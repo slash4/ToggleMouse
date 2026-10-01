@@ -29,7 +29,11 @@ enum StreamMessage: Equatable {
     case begin
     /// Emitter stopped streaming; receiver releases anything still held.
     case end
+    /// Raw movement from the event tap; the emitter turns it into `pointer` before sending.
     case mouseMove(dx: Float, dy: Float)
+    /// Running total of pointer movement since the session started, numbered so the receiver
+    /// can apply only newer totals. Sent by datagram, and over the stream before clicks.
+    case pointer(sequence: UInt64, x: Double, y: Double)
     case mouseButton(button: UInt8, down: Bool, clickState: UInt8)
     case scroll(continuous: Bool, lineX: Int32, lineY: Int32, pixelX: Float, pixelY: Float)
     case key(keyCode: UInt16, down: Bool, isRepeat: Bool, flags: UInt64)
@@ -50,6 +54,8 @@ extension StreamMessage {
             w.u8(0x04)
         case let .mouseMove(dx, dy):
             w.u8(0x10); w.f32(dx); w.f32(dy)
+        case let .pointer(sequence, x, y):
+            w.u8(0x13); w.u64(sequence); w.f64(x); w.f64(y)
         case let .mouseButton(button, down, clickState):
             w.u8(0x11); w.u8(button); w.bool(down); w.u8(clickState)
         case let .scroll(continuous, lineX, lineY, pixelX, pixelY):
@@ -77,6 +83,9 @@ extension StreamMessage {
         case 0x10:
             guard let dx = r.f32(), let dy = r.f32() else { return nil }
             self = .mouseMove(dx: dx, dy: dy)
+        case 0x13:
+            guard let sequence = r.u64(), let x = r.f64(), let y = r.f64() else { return nil }
+            self = .pointer(sequence: sequence, x: x, y: y)
         case 0x11:
             guard let button = r.u8(), let down = r.bool(), let clickState = r.u8() else { return nil }
             self = .mouseButton(button: button, down: down, clickState: clickState)
@@ -108,6 +117,7 @@ struct ByteWriter {
     mutating func u64(_ value: UInt64) { append(value) }
     mutating func i32(_ value: Int32) { u32(UInt32(bitPattern: value)) }
     mutating func f32(_ value: Float) { u32(value.bitPattern) }
+    mutating func f64(_ value: Double) { u64(value.bitPattern) }
 
     private mutating func append<T: FixedWidthInteger>(_ value: T) {
         withUnsafeBytes(of: value.bigEndian) { data.append(contentsOf: $0) }
@@ -129,6 +139,7 @@ struct ByteReader {
     mutating func u64() -> UInt64? { read(UInt64.self) }
     mutating func i32() -> Int32? { u32().map { Int32(bitPattern: $0) } }
     mutating func f32() -> Float? { u32().map { Float(bitPattern: $0) } }
+    mutating func f64() -> Double? { u64().map { Double(bitPattern: $0) } }
 
     mutating func bool() -> Bool? {
         switch u8() {

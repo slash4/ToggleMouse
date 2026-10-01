@@ -86,6 +86,7 @@ final class EmitterController: ObservableObject {
 
     func stopStreaming() {
         guard let id = activeReceiverID else { return }
+        links[id]?.syncPointer()
         links[id]?.send(.end)
         activeReceiverID = nil
         CGAssociateMouseAndMouseCursorPosition(1)
@@ -107,8 +108,16 @@ final class EmitterController: ObservableObject {
             }
         }
         guard let id = activeReceiverID, let link = links[id] else { return false }
-        if let message = StreamMessage(event: event, type: type) {
+        switch StreamMessage(event: event, type: type) {
+        case let .mouseMove(dx, dy):
+            link.movePointer(dx: Double(dx), dy: Double(dy))
+        case let message? where message.dependsOnPointer:
+            link.syncPointer()
             link.send(message)
+        case let message?:
+            link.send(message)
+        case nil:
+            break
         }
         return true
     }

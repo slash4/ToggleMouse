@@ -50,6 +50,13 @@ SIGN_IDENTITY="Apple Development: Your Name (TEAMID)" ./scripts/build-app.sh
   ephemeral keys. Traffic uses ChaCha20-Poly1305 with a separate key for each direction and
   counter nonces, so replayed or altered frames are rejected. A Mac without the paired private
   key can't complete the handshake.
+- **Transport**: keys, clicks, scroll and heartbeats use TCP (Nagle off), so nothing is
+  lost or reordered. Pointer movement uses UDP on the same port, encrypted with a separate
+  session key. Each datagram carries the running total of movement plus a sequence number,
+  so a lost datagram costs nothing and stale ones are dropped. The latest total is also sent
+  over TCP before each click or scroll, and every 100 ms in case UDP is blocked. Datagrams
+  are marked as interactive voice traffic for Wi-Fi priority, and the app opts out of
+  App Nap so macOS doesn't throttle it in the background.
 - **Capture**: an active `CGEventTap` on the emitter swallows input while streaming and freezes
   the local cursor with `CGAssociateMouseAndMouseCursorPosition`. Keys are sent as raw key codes.
 - **Failsafe**: the emitter sends a heartbeat every 2 s. If the link drops or goes silent for 6 s,

@@ -25,17 +25,30 @@ enum ChannelError: Error {
 
 /// ChaCha20-Poly1305 channel with one key per direction and counter nonces. TCP preserves
 /// order, so any replayed, dropped or reordered frame fails authentication.
+///
+/// The session also has a one-way datagram path (emitter to receiver) for pointer updates,
+/// with its own key. Datagrams carry their sequence number, which is also the nonce; the
+/// receiver drops any datagram that isn't newer than the last one it accepted.
 final class SecureChannel {
     private static let tagSize = 16
+    static let datagramIDSize = 8
+    private static let datagramHeaderSize = datagramIDSize + 8
+
+    /// Identifies this session's datagrams; both sides derive it in the handshake.
+    let datagramID: Data
 
     private let sendKey: SymmetricKey
     private let receiveKey: SymmetricKey
+    private let datagramKey: SymmetricKey
     private var sendCounter: UInt64 = 0
     private var receiveCounter: UInt64 = 0
+    private var lastDatagramSequence: UInt64 = 0
 
-    init(sendKey: SymmetricKey, receiveKey: SymmetricKey) {
+    init(sendKey: SymmetricKey, receiveKey: SymmetricKey, datagramKey: SymmetricKey, datagramID: Data) {
         self.sendKey = sendKey
         self.receiveKey = receiveKey
+        self.datagramKey = datagramKey
+        self.datagramID = datagramID
     }
 
     func seal(_ message: StreamMessage) throws -> Data {
@@ -53,6 +66,37 @@ final class SecureChannel {
         )
         let plaintext = try ChaChaPoly.open(box, using: receiveKey)
         receiveCounter += 1
+        guard let message = StreamMessage(decoding: plaintext) else { throw ChannelError.malformed }
+        return message
+    }
+
+    /// `sequence` must increase with every datagram.
+    func sealDatagram(_ message: StreamMessage, sequence: UInt64) throws -> Data {
+        let box = try ChaChaPoly.seal(message.encoded(), using: datagramKey, nonce: Self.nonce(sequence), authenticating: datagramID)
+        var header = ByteWriter()
+        header.u64(sequence)
+        return datagramID + header.data + Data(box.ciphertext) + box.tag
+    }
+
+    static func datagramID(of datagram: Data) -> Data? {
+        guard datagram.count >= datagramHeaderSize + tagSize else { return nil }
+        return Data(datagram.prefix(datagramIDSize))
+    }
+
+    func openDatagram(_ datagram: Data) throws -> StreamMessage {
+        let datagram = Data(datagram)
+        var header = ByteReader(datagram.subdata(in: Self.datagramIDSize..<min(Self.datagramHeaderSize, datagram.count)))
+        guard datagram.count >= Self.datagramHeaderSize + Self.tagSize,
+              datagram.prefix(Self.datagramIDSize) == datagramID,
+              let sequence = header.u64(), sequence > lastDatagramSequence else { throw ChannelError.malformed }
+        let body = datagram.subdata(in: Self.datagramHeaderSize..<datagram.count)
+        let box = try ChaChaPoly.SealedBox(
+            nonce: Self.nonce(sequence),
+            ciphertext: body.dropLast(Self.tagSize),
+            tag: body.suffix(Self.tagSize)
+        )
+        let plaintext = try ChaChaPoly.open(box, using: datagramKey, authenticating: datagramID)
+        lastDatagramSequence = sequence
         guard let message = StreamMessage(decoding: plaintext) else { throw ChannelError.malformed }
         return message
     }
@@ -100,13 +144,15 @@ final class SecureChannel {
             inputKeyMaterial: SymmetricKey(data: material),
             salt: Data(SHA256.hash(data: transcript)),
             info: Data("ToggleMouse-keys".utf8),
-            outputByteCount: 64
+            outputByteCount: 32 * 3 + datagramIDSize
         )
         let bytes = output.withUnsafeBytes { Data($0) }
-        let initiatorToResponder = SymmetricKey(data: bytes.prefix(32))
-        let responderToInitiator = SymmetricKey(data: bytes.suffix(32))
+        let initiatorToResponder = SymmetricKey(data: bytes.subdata(in: 0..<32))
+        let responderToInitiator = SymmetricKey(data: bytes.subdata(in: 32..<64))
+        let datagramKey = SymmetricKey(data: bytes.subdata(in: 64..<96))
+        let datagramID = bytes.subdata(in: 96..<bytes.count)
         return isInitiator
-            ? SecureChannel(sendKey: initiatorToResponder, receiveKey: responderToInitiator)
-            : SecureChannel(sendKey: responderToInitiator, receiveKey: initiatorToResponder)
+            ? SecureChannel(sendKey: initiatorToResponder, receiveKey: responderToInitiator, datagramKey: datagramKey, datagramID: datagramID)
+            : SecureChannel(sendKey: responderToInitiator, receiveKey: initiatorToResponder, datagramKey: datagramKey, datagramID: datagramID)
     }
 }

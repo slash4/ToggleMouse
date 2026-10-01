@@ -11,6 +11,10 @@ private final class InboundSession {
     var channel: SecureChannel?
     /// True once the emitter has proven it derived the same session keys.
     var isAuthenticated = false
+    /// Latest pointer total applied, from either the datagram or the stream path.
+    var pointerSequence: UInt64 = 0
+    var pointerX = 0.0
+    var pointerY = 0.0
 
     init(connection: FramedConnection) {
         self.connection = connection
@@ -22,6 +26,7 @@ final class ReceiverController: ObservableObject {
     static let pairingWindow: TimeInterval = 120
     private static let handshakeTimeout: TimeInterval = 10
     private static let silenceTimeout: TimeInterval = 8
+    private static let maxDatagramFlows = 16
 
     @Published private(set) var listenerStatus = "Starting…"
     @Published private(set) var pairingOpenUntil: Date?
@@ -36,6 +41,9 @@ final class ReceiverController: ObservableObject {
     private let store: PeerStore
     private let injector = EventInjector()
     private var listener: NWListener?
+    private var datagramListener: NWListener?
+    /// One flow per emitter address and port; each emitter reconnect opens a new one.
+    private var datagramFlows: [NWConnection] = []
     private var sessions: [InboundSession] = []
     private var streamingSession: InboundSession?
     private var timer: Timer?
@@ -47,6 +55,7 @@ final class ReceiverController: ObservableObject {
 
     func start() {
         startListener()
+        startDatagramListener()
         timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in self?.tick() }
     }
 
@@ -54,6 +63,10 @@ final class ReceiverController: ObservableObject {
         timer?.invalidate()
         listener?.cancel()
         listener = nil
+        datagramListener?.cancel()
+        datagramListener = nil
+        datagramFlows.forEach { $0.cancel() }
+        datagramFlows = []
         sessions.forEach { $0.connection.close() }
         pairing?.cancel()
         endStream()
@@ -119,6 +132,55 @@ final class ReceiverController: ObservableObject {
         } catch {
             listenerStatus = "Listener error: \(error.localizedDescription)"
         }
+    }
+
+    /// UDP on the same port as the stream. If it can't start, emitters still get
+    /// pointer updates over the stream every 100 ms.
+    private func startDatagramListener() {
+        do {
+            let listener = try NWListener(using: NetworkConfig.datagramParameters(), on: NWEndpoint.Port(rawValue: NetworkConfig.defaultPort)!)
+            listener.newConnectionHandler = { [weak self] flow in self?.acceptDatagrams(flow) }
+            listener.stateUpdateHandler = { state in
+                if case .failed(let error) = state { NSLog("ToggleMouse: UDP listener failed: \(error)") }
+            }
+            listener.start(queue: .main)
+            datagramListener = listener
+        } catch {
+            NSLog("ToggleMouse: UDP listener failed: \(error)")
+        }
+    }
+
+    private func acceptDatagrams(_ flow: NWConnection) {
+        if datagramFlows.count >= Self.maxDatagramFlows {
+            datagramFlows.removeFirst().cancel()
+        }
+        datagramFlows.append(flow)
+        flow.stateUpdateHandler = { [weak self, weak flow] state in
+            switch state {
+            case .failed, .cancelled:
+                self?.datagramFlows.removeAll { $0 === flow }
+            default:
+                break
+            }
+        }
+        flow.start(queue: .main)
+        receiveDatagram(on: flow)
+    }
+
+    private func receiveDatagram(on flow: NWConnection) {
+        flow.receiveMessage { [weak self, weak flow] data, _, _, error in
+            guard let self, let flow, error == nil else { return }
+            if let data { self.received(datagram: data) }
+            self.receiveDatagram(on: flow)
+        }
+    }
+
+    private func received(datagram: Data) {
+        guard let id = SecureChannel.datagramID(of: datagram),
+              let session = sessions.first(where: { $0.isAuthenticated && $0.channel?.datagramID == id }),
+              let message = try? session.channel?.openDatagram(datagram),
+              case .pointer = message else { return }
+        handle(message, from: session)
     }
 
     private func accept(_ nwConnection: NWConnection) {
@@ -199,6 +261,15 @@ final class ReceiverController: ObservableObject {
             streamingEmitterID = session.peer?.id
         case .end:
             if streamingSession === session { endStream() }
+        case let .pointer(sequence, x, y):
+            // Datagrams and stream syncs interleave; only newer totals count.
+            guard sequence > session.pointerSequence else { break }
+            let dx = x - session.pointerX
+            let dy = y - session.pointerY
+            session.pointerSequence = sequence
+            session.pointerX = x
+            session.pointerY = y
+            if streamingSession === session { injector.moveMouse(dx: dx, dy: dy) }
         default:
             if streamingSession === session { injector.apply(message) }
         }

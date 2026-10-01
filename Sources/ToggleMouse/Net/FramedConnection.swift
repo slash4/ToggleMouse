@@ -10,7 +10,16 @@ enum NetworkConfig {
         tcp.noDelay = true
         tcp.enableKeepalive = true
         tcp.keepaliveIdle = 5
-        return NWParameters(tls: nil, tcp: tcp)
+        let parameters = NWParameters(tls: nil, tcp: tcp)
+        parameters.serviceClass = .responsiveData
+        return parameters
+    }
+
+    /// Pointer datagrams. Marked as interactive voice so Wi-Fi puts them in its fastest queue.
+    static func datagramParameters() -> NWParameters {
+        let parameters = NWParameters(dtls: nil, udp: NWProtocolUDP.Options())
+        parameters.serviceClass = .interactiveVoice
+        return parameters
     }
 
     /// Parses "host" or "host:port" typed by the user. IPv6 literals use the default port.
@@ -59,6 +68,9 @@ final class FramedConnection {
 
     private let connection: NWConnection
     private var isClosed = false
+
+    /// The peer's resolved address once connected.
+    var remoteEndpoint: NWEndpoint? { connection.currentPath?.remoteEndpoint }
 
     convenience init(endpoint: NWEndpoint) {
         self.init(NWConnection(to: endpoint, using: NetworkConfig.parameters()))

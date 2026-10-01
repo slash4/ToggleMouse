@@ -32,7 +32,7 @@ final class EventInjector {
             pressKey(keyCode: keyCode, down: down, isRepeat: isRepeat, flags: CGEventFlags(rawValue: flags))
         case let .flagsChanged(keyCode, flags):
             changeFlags(keyCode: keyCode, flags: CGEventFlags(rawValue: flags))
-        case .ready, .heartbeat, .begin, .end:
+        case .ready, .heartbeat, .begin, .end, .pointer:
             break
         }
     }
@@ -64,7 +64,7 @@ final class EventInjector {
         return current
     }
 
-    private func moveMouse(dx: CGFloat, dy: CGFloat) {
+    func moveMouse(dx: CGFloat, dy: CGFloat) {
         let current = cursorLocation
         let target = clampToDisplays(CGPoint(x: current.x + dx, y: current.y + dy), from: current)
         location = target

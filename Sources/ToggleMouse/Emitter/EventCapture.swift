@@ -62,6 +62,14 @@ private func eventTapCallback(
 }
 
 extension StreamMessage {
+    /// Clicks and scrolls act at the cursor, so the pointer must be synced before them.
+    var dependsOnPointer: Bool {
+        switch self {
+        case .mouseButton, .scroll: return true
+        default: return false
+        }
+    }
+
     /// Converts a captured event into its wire form; nil for types that aren't streamed.
     init?(event: CGEvent, type: CGEventType) {
         switch type {

@@ -14,6 +14,8 @@ final class ReceiverLink {
     private static let silenceTimeout: TimeInterval = 6
     private static let retryDelay: TimeInterval = 2
     private static let rejectedRetryDelay: TimeInterval = 30
+    /// How often the pointer total also goes over the stream, in case UDP is blocked.
+    private static let pointerSyncInterval: TimeInterval = 0.1
 
     var peer: PairedPeer
     var onStateChange: ((State) -> Void)?
@@ -35,6 +37,15 @@ final class ReceiverLink {
     /// because the receiver only sends anything back when it echoes one.
     private var lastHeartbeat = Date.distantPast
     private var nextAttempt = Date.distantPast
+
+    /// Pointer movement goes by UDP as a running total: a lost datagram costs nothing
+    /// because the next one carries the full total.
+    private var datagrams: NWConnection?
+    private var pointerSequence: UInt64 = 0
+    private var syncedPointerSequence: UInt64 = 0
+    private var pointerX = 0.0
+    private var pointerY = 0.0
+    private var lastPointerSync = Date.distantPast
 
     init(peer: PairedPeer, identity: Identity) {
         self.peer = peer
@@ -66,6 +77,29 @@ final class ReceiverLink {
     func send(_ message: StreamMessage) {
         guard let channel, let connection, let frame = try? channel.seal(message) else { return }
         connection.send(frame)
+    }
+
+    func movePointer(dx: Double, dy: Double) {
+        guard let channel else { return }
+        pointerX += dx
+        pointerY += dy
+        pointerSequence += 1
+        let message = StreamMessage.pointer(sequence: pointerSequence, x: pointerX, y: pointerY)
+        if let datagrams, let datagram = try? channel.sealDatagram(message, sequence: pointerSequence) {
+            datagrams.send(content: datagram, completion: .idempotent)
+        }
+        if Date().timeIntervalSince(lastPointerSync) >= Self.pointerSyncInterval {
+            syncPointer()
+        }
+    }
+
+    /// Sends the latest pointer total over the stream, so a click or scroll that
+    /// follows lands where the cursor is even if datagrams were lost.
+    func syncPointer() {
+        guard pointerSequence > syncedPointerSequence else { return }
+        send(.pointer(sequence: pointerSequence, x: pointerX, y: pointerY))
+        syncedPointerSequence = pointerSequence
+        lastPointerSync = Date()
     }
 
     func close() {
@@ -103,6 +137,7 @@ final class ReceiverLink {
             lastReceived = Date()
             switch message {
             case .ready where state == .connecting:
+                openDatagrams()
                 state = .connected
             case .heartbeat:
                 onRoundTrip?(lastReceived.timeIntervalSince(lastHeartbeat))
@@ -139,10 +174,24 @@ final class ReceiverLink {
         }
     }
 
+    /// Datagrams go to the same address and port as the stream.
+    private func openDatagrams() {
+        guard case let .hostPort(host, port) = connection?.remoteEndpoint else { return }
+        let datagrams = NWConnection(host: host, port: port, using: NetworkConfig.datagramParameters())
+        datagrams.start(queue: .main)
+        self.datagrams = datagrams
+    }
+
     private func closed() {
         connection = nil
         channel = nil
         ephemeral = nil
+        datagrams?.cancel()
+        datagrams = nil
+        pointerSequence = 0
+        syncedPointerSequence = 0
+        pointerX = 0
+        pointerY = 0
         state = .disconnected
     }
 }

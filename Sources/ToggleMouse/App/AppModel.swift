@@ -35,6 +35,11 @@ final class AppModel: ObservableObject {
 
     private var indicatorObserver: AnyCancellable?
     private var trustTimer: Timer?
+    /// Keeps App Nap from throttling this background app, which would delay input handling.
+    private let activity = ProcessInfo.processInfo.beginActivity(
+        options: [.userInitiatedAllowingIdleSystemSleep, .latencyCritical],
+        reason: "Streaming mouse and keyboard input"
+    )
 
     init(identity: Identity) {
         self.identity = identity
