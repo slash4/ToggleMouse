@@ -120,13 +120,15 @@ mismatched builds fail to connect.
   idle. Unchecking the setting unregisters it.
 - **Capture**: an active `CGEventTap` on the emitter swallows input while streaming and freezes
   the local cursor with `CGAssociateMouseAndMouseCursorPosition`. Keys are sent as raw key codes.
+  Media keys (volume, mute, playback, brightness, keyboard backlight, eject) are captured as
+  system-defined events and replayed as the same events; Power, Caps Lock and Help stay local.
 - **Failsafe**: the emitter sends a heartbeat every 2 s. If the link drops or goes silent for 6 s,
   the emitter takes control back. When a stream ends or drops, the receiver releases every key,
   button and modifier that is still held.
 
 ## Limitations
 
-- Movement, buttons, scroll and keys only. No gestures, media keys, clipboard or login window.
+- Movement, buttons, scroll, keys and media keys only. No gestures, clipboard or login window.
 - While Secure Input is on (for example, a focused password field on the emitter), macOS hides
   keystrokes from the event tap.
 - The emitter's cursor stays visible, frozen in place, while streaming.

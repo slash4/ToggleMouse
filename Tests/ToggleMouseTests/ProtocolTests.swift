@@ -15,6 +15,8 @@ final class WireTests: XCTestCase {
             .scroll(continuous: true, lineX: -1, lineY: 3, pixelX: -4.25, pixelY: 30),
             .key(keyCode: 0x7E, down: false, isRepeat: true, flags: CGEventFlags.maskCommand.rawValue),
             .flagsChanged(keyCode: 0x38, flags: CGEventFlags.maskShift.rawValue),
+            .mediaKey(keyType: 16, down: true, isRepeat: false),
+            .mediaKey(keyType: 0, down: false, isRepeat: true),
         ]
         for message in messages {
             XCTAssertEqual(StreamMessage(decoding: message.encoded()), message)

@@ -178,7 +178,8 @@ final class EmitterController: ObservableObject {
         case let message?:
             link.send(message)
         case nil:
-            break
+            // System-defined events that aren't streamed media keys, such as Power, stay local.
+            return false
         }
         return true
     }

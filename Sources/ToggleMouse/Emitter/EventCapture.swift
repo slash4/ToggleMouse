@@ -1,3 +1,4 @@
+import AppKit
 import CoreGraphics
 import Foundation
 
@@ -18,7 +19,7 @@ final class EventCapture {
     /// Returns false when the tap can't be created, usually for lack of Accessibility permission.
     func start() -> Bool {
         guard tap == nil else { return true }
-        let mask = Self.eventTypes.reduce(CGEventMask(0)) { $0 | (CGEventMask(1) << $1.rawValue) }
+        let mask = Self.eventTypes.reduce(CGEventMask(1) << MediaKey.systemDefinedType) { $0 | (CGEventMask(1) << $1.rawValue) }
         guard let tap = CGEvent.tapCreate(
             tap: .cgSessionEventTap,
             place: .headInsertEventTap,
@@ -82,6 +83,44 @@ enum EventClock {
     }
 }
 
+/// Media keys reach the event tap as NX_SYSDEFINED events (type 14) of subtype 8, with the
+/// key and its state packed into data1. CGEventType has no case for them.
+enum MediaKey {
+    static let systemDefinedType: UInt32 = 14
+    private static let auxControlSubtype: Int16 = 8
+    private static let downState = 0xA
+    private static let upState = 0xB
+
+    /// NX_KEYTYPE values that are streamed: volume up/down (0, 1), brightness up/down (2, 3),
+    /// mute (7), eject (14), play (16), next (17), previous (18), fast-forward (19),
+    /// rewind (20) and keyboard backlight up/down (21, 22). Caps Lock, Help and Power stay local.
+    static let streamedKeys: Set<UInt8> = [0, 1, 2, 3, 7, 14, 16, 17, 18, 19, 20, 21, 22]
+
+    static func decode(_ event: CGEvent) -> (keyType: UInt8, down: Bool, isRepeat: Bool)? {
+        guard let nsEvent = NSEvent(cgEvent: event), nsEvent.subtype.rawValue == auxControlSubtype else { return nil }
+        let data1 = nsEvent.data1
+        let keyType = (data1 >> 16) & 0xFFFF
+        let state = (data1 >> 8) & 0xFF
+        guard keyType < 256, streamedKeys.contains(UInt8(keyType)), state == downState || state == upState else { return nil }
+        return (UInt8(keyType), state == downState, data1 & 1 != 0)
+    }
+
+    static func makeEvent(keyType: UInt8, down: Bool, isRepeat: Bool) -> CGEvent? {
+        let flags = (down ? downState : upState) << 8 | (isRepeat ? 1 : 0)
+        return NSEvent.otherEvent(
+            with: .systemDefined,
+            location: .zero,
+            modifierFlags: NSEvent.ModifierFlags(rawValue: UInt(flags & 0xFF00)),
+            timestamp: 0,
+            windowNumber: 0,
+            context: nil,
+            subtype: auxControlSubtype,
+            data1: Int(keyType) << 16 | flags,
+            data2: -1
+        )?.cgEvent
+    }
+}
+
 extension StreamMessage {
     /// Clicks and scrolls act at the cursor, so the pointer must be synced before them.
     var dependsOnPointer: Bool {
@@ -93,6 +132,11 @@ extension StreamMessage {
 
     /// Converts a captured event into its wire form; nil for types that aren't streamed.
     init?(event: CGEvent, type: CGEventType) {
+        if type.rawValue == MediaKey.systemDefinedType {
+            guard let key = MediaKey.decode(event) else { return nil }
+            self = .mediaKey(keyType: key.keyType, down: key.down, isRepeat: key.isRepeat)
+            return
+        }
         switch type {
         case .mouseMoved, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged:
             self = .mouseMove(

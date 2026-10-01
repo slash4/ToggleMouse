@@ -122,6 +122,8 @@ final class EventInjector {
             pressKey(keyCode: keyCode, down: down, isRepeat: isRepeat, flags: CGEventFlags(rawValue: flags))
         case let .flagsChanged(keyCode, flags):
             changeFlags(keyCode: keyCode, flags: CGEventFlags(rawValue: flags))
+        case let .mediaKey(keyType, down, isRepeat):
+            MediaKey.makeEvent(keyType: keyType, down: down, isRepeat: isRepeat)?.post(tap: .cghidEventTap)
         case .ready, .heartbeat, .begin, .end, .pointer, .placement, .edgeExit:
             break
         }

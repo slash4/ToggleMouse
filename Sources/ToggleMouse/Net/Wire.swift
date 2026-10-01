@@ -45,6 +45,8 @@ enum StreamMessage: Equatable {
     case scroll(continuous: Bool, lineX: Int32, lineY: Int32, pixelX: Float, pixelY: Float)
     case key(keyCode: UInt16, down: Bool, isRepeat: Bool, flags: UInt64)
     case flagsChanged(keyCode: UInt16, flags: UInt64)
+    /// Volume, playback and brightness keys, by NX_KEYTYPE value (see `MediaKey`).
+    case mediaKey(keyType: UInt8, down: Bool, isRepeat: Bool)
 }
 
 extension StreamMessage {
@@ -76,6 +78,8 @@ extension StreamMessage {
             w.u8(0x20); w.u16(keyCode); w.bool(down); w.bool(isRepeat); w.u64(flags)
         case let .flagsChanged(keyCode, flags):
             w.u8(0x21); w.u16(keyCode); w.u64(flags)
+        case let .mediaKey(keyType, down, isRepeat):
+            w.u8(0x22); w.u8(keyType); w.bool(down); w.bool(isRepeat)
         }
         return w.data
     }
@@ -124,6 +128,9 @@ extension StreamMessage {
         case 0x21:
             guard let keyCode = r.u16(), let flags = r.u64() else { return nil }
             self = .flagsChanged(keyCode: keyCode, flags: flags)
+        case 0x22:
+            guard let keyType = r.u8(), let down = r.bool(), let isRepeat = r.bool() else { return nil }
+            self = .mediaKey(keyType: keyType, down: down, isRepeat: isRepeat)
         default:
             return nil
         }
