@@ -16,5 +16,5 @@ jobs:
         run: swift build
       - name: Test
         run: swift test
-      - name: Build universal release
-        run: swift build -c release --arch arm64 --arch x86_64
+      - name: Build universal app
+        run: ./scripts/build-app.sh

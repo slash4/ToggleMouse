@@ -6,14 +6,20 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-BUILD_ARGS=(-c release --arch arm64 --arch x86_64)
-swift build "${BUILD_ARGS[@]}"
+# Build each architecture separately and merge with lipo: multi-arch `swift build` goes
+# through Xcode's build system, which rejects per-target language modes in Xcode 16.
+for ARCH in arm64 x86_64; do
+    swift build -c release --arch "$ARCH"
+done
 
 APP=build/ToggleMouse.app
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$APP/Contents/Library/LaunchDaemons"
-BIN="$(swift build "${BUILD_ARGS[@]}" --show-bin-path)"
-cp "$BIN/ToggleMouse" "$BIN/ToggleMouseHelper" "$APP/Contents/MacOS/"
+for PRODUCT in ToggleMouse ToggleMouseHelper; do
+    lipo -create -output "$APP/Contents/MacOS/$PRODUCT" \
+        "$(swift build -c release --arch arm64 --show-bin-path)/$PRODUCT" \
+        "$(swift build -c release --arch x86_64 --show-bin-path)/$PRODUCT"
+done
 cp Resources/io.github.slash4.togglemouse.helper.plist "$APP/Contents/Library/LaunchDaemons/"
 cp Resources/Info.plist "$APP/Contents/"
 cp Resources/AppIcon.icns "$APP/Contents/Resources/"
