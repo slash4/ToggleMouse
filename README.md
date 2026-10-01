@@ -64,6 +64,14 @@ SIGN_IDENTITY="Apple Development: Your Name (TEAMID)" ./scripts/build-app.sh
   and one mouse report interval. A 2 ms timer on a dedicated high-priority thread moves the
   cursor along the interpolated path. Clicks and scrolls flush the buffer first, so they land
   where the cursor is.
+- **AirDrop helper**: AWDL (the Wi-Fi peer-to-peer link behind AirDrop, Universal Control,
+  Sidecar and AirPlay) hops the radio between channels, which delays packets in bursts. With
+  "Turn off AirDrop while streaming" checked, a privileged helper (`ToggleMouseHelper`,
+  registered through `SMAppService` and approved in System Settings › General › Login Items)
+  keeps `awdl0` down while a stream is active on that Mac. AWDL comes back when streaming
+  stops, or when the app quits or crashes, if it was up before. The helper only accepts XPC
+  connections from ToggleMouse signed by the same team, can only switch `awdl0`, and exits when
+  idle. Unchecking the setting unregisters it.
 - **Capture**: an active `CGEventTap` on the emitter swallows input while streaming and freezes
   the local cursor with `CGAssociateMouseAndMouseCursorPosition`. Keys are sent as raw key codes.
 - **Failsafe**: the emitter sends a heartbeat every 2 s. If the link drops or goes silent for 6 s,

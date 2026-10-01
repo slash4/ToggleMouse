@@ -29,6 +29,8 @@ struct MainView: View {
                 } else if let receiver = model.receiver {
                     ReceiverView(controller: receiver, store: model.store)
                 }
+
+                WiFiSettingsView(awdl: model.awdl)
             }
             .padding(20)
         }

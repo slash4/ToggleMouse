@@ -11,8 +11,10 @@ swift build "${BUILD_ARGS[@]}"
 
 APP=build/ToggleMouse.app
 rm -rf "$APP"
-mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-cp "$(swift build "${BUILD_ARGS[@]}" --show-bin-path)/ToggleMouse" "$APP/Contents/MacOS/"
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$APP/Contents/Library/LaunchDaemons"
+BIN="$(swift build "${BUILD_ARGS[@]}" --show-bin-path)"
+cp "$BIN/ToggleMouse" "$BIN/ToggleMouseHelper" "$APP/Contents/MacOS/"
+cp Resources/app.togglemouse.helper.plist "$APP/Contents/Library/LaunchDaemons/"
 cp Resources/Info.plist "$APP/Contents/"
 cp Resources/AppIcon.icns "$APP/Contents/Resources/"
 
@@ -24,9 +26,12 @@ IDENTITY="${IDENTITY:-$(find_identity 'Apple Development')}"
 
 if [ -n "$IDENTITY" ]; then
     echo "Signing with: $IDENTITY"
+    # Sign the helper first; its identifier is what the app's XPC requirement checks.
+    codesign --force --options runtime --identifier app.togglemouse.helper --sign "$IDENTITY" "$APP/Contents/MacOS/ToggleMouseHelper"
     codesign --force --options runtime --sign "$IDENTITY" "$APP"
 else
-    echo "No signing identity found; signing ad-hoc"
+    echo "No signing identity found; signing ad-hoc (the AirDrop helper won't work)"
+    codesign --force --identifier app.togglemouse.helper --sign - "$APP/Contents/MacOS/ToggleMouseHelper"
     codesign --force --sign - "$APP"
 fi
 

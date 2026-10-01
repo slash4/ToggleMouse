@@ -7,7 +7,19 @@ let package = Package(
     targets: [
         .executableTarget(
             name: "ToggleMouse",
+            dependencies: ["ToggleMouseShared"],
             path: "Sources/ToggleMouse",
+            swiftSettings: [.swiftLanguageMode(.v5)]
+        ),
+        .executableTarget(
+            name: "ToggleMouseHelper",
+            dependencies: ["ToggleMouseShared"],
+            path: "Sources/ToggleMouseHelper",
+            swiftSettings: [.swiftLanguageMode(.v5)]
+        ),
+        .target(
+            name: "ToggleMouseShared",
+            path: "Sources/ToggleMouseShared",
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
         .testTarget(

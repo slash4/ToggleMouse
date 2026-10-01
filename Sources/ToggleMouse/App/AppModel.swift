@@ -29,12 +29,14 @@ final class AppModel: ObservableObject {
 
     let identity: Identity
     let store = PeerStore()
+    let awdl = AWDLController()
 
     /// Asks the app to show its window, e.g. for an incoming pairing request.
     var onNeedsWindow: (() -> Void)?
 
     private var indicatorObserver: AnyCancellable?
     private var trustTimer: Timer?
+    private var awdlObserver: AnyCancellable?
     /// Keeps App Nap from throttling this background app, which would delay input handling.
     private let activity = ProcessInfo.processInfo.beginActivity(
         options: [.userInitiatedAllowingIdleSystemSleep, .latencyCritical],
@@ -45,8 +47,11 @@ final class AppModel: ObservableObject {
         self.identity = identity
         mode = UserDefaults.standard.string(forKey: "mode").flatMap(Mode.init) ?? .emitter
         startController()
+        awdlObserver = $indicator.sink { [weak self] in self?.awdl.setStreaming($0 != .idle) }
         trustTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
             guard let self else { return }
+            // Picks up approval of the helper in System Settings.
+            self.awdl.refresh()
             let trusted = AXIsProcessTrusted()
             if trusted != self.isTrusted { self.isTrusted = trusted }
         }
