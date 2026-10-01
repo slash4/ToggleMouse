@@ -57,6 +57,13 @@ SIGN_IDENTITY="Apple Development: Your Name (TEAMID)" ./scripts/build-app.sh
   over TCP before each click or scroll, and every 100 ms in case UDP is blocked. Datagrams
   are marked as interactive voice traffic for Wi-Fi priority, and the app opts out of
   App Nap so macOS doesn't throttle it in the background.
+- **Smoothing**: Wi-Fi delivers packets in bursts. The receiver uses a jitter buffer
+  instead of applying each update on arrival. Each update carries its capture time on the
+  emitter. The receiver schedules it at that time, plus the lowest delay seen recently, plus
+  a buffer that adapts between 2 and 40 ms. The buffer covers 95% of the measured variation
+  and one mouse report interval. A 2 ms timer on a dedicated high-priority thread moves the
+  cursor along the interpolated path. Clicks and scrolls flush the buffer first, so they land
+  where the cursor is.
 - **Capture**: an active `CGEventTap` on the emitter swallows input while streaming and freezes
   the local cursor with `CGAssociateMouseAndMouseCursorPosition`. Keys are sent as raw key codes.
 - **Failsafe**: the emitter sends a heartbeat every 2 s. If the link drops or goes silent for 6 s,

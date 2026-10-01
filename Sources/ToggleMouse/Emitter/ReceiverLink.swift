@@ -45,6 +45,7 @@ final class ReceiverLink {
     private var syncedPointerSequence: UInt64 = 0
     private var pointerX = 0.0
     private var pointerY = 0.0
+    private var pointerTime: UInt64 = 0
     private var lastPointerSync = Date.distantPast
 
     init(peer: PairedPeer, identity: Identity) {
@@ -79,12 +80,14 @@ final class ReceiverLink {
         connection.send(frame)
     }
 
-    func movePointer(dx: Double, dy: Double) {
+    /// `time` is when the movement was captured, in uptime nanoseconds.
+    func movePointer(dx: Double, dy: Double, time: UInt64) {
         guard let channel else { return }
         pointerX += dx
         pointerY += dy
+        pointerTime = time
         pointerSequence += 1
-        let message = StreamMessage.pointer(sequence: pointerSequence, x: pointerX, y: pointerY)
+        let message = StreamMessage.pointer(sequence: pointerSequence, x: pointerX, y: pointerY, time: time)
         if let datagrams, let datagram = try? channel.sealDatagram(message, sequence: pointerSequence) {
             datagrams.send(content: datagram, completion: .idempotent)
         }
@@ -97,7 +100,7 @@ final class ReceiverLink {
     /// follows lands where the cursor is even if datagrams were lost.
     func syncPointer() {
         guard pointerSequence > syncedPointerSequence else { return }
-        send(.pointer(sequence: pointerSequence, x: pointerX, y: pointerY))
+        send(.pointer(sequence: pointerSequence, x: pointerX, y: pointerY, time: pointerTime))
         syncedPointerSequence = pointerSequence
         lastPointerSync = Date()
     }

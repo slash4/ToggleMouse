@@ -61,6 +61,27 @@ private func eventTapCallback(
     return Unmanaged<EventCapture>.fromOpaque(userInfo).takeUnretainedValue().handle(type, event)
 }
 
+enum EventClock {
+    private static let timebase: mach_timebase_info_data_t = {
+        var info = mach_timebase_info_data_t()
+        mach_timebase_info(&info)
+        return info
+    }()
+
+    /// When the event was captured, in uptime nanoseconds. Using the event's own timestamp
+    /// rather than the time the tap ran keeps main-thread delays out of the timing.
+    /// `CGEvent.timestamp` is documented as nanoseconds but is in mach ticks on Apple
+    /// silicon, so take whichever reading is closer to the current time.
+    static func uptimeNanoseconds(of event: CGEvent) -> UInt64 {
+        let stamp = event.timestamp
+        let now = DispatchTime.now().uptimeNanoseconds
+        guard timebase.numer != timebase.denom else { return stamp }
+        let converted = stamp &* UInt64(timebase.numer) / UInt64(timebase.denom)
+        let distance = { (value: UInt64) in value > now ? value - now : now - value }
+        return distance(stamp) < distance(converted) ? stamp : converted
+    }
+}
+
 extension StreamMessage {
     /// Clicks and scrolls act at the cursor, so the pointer must be synced before them.
     var dependsOnPointer: Bool {

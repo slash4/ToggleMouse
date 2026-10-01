@@ -110,7 +110,7 @@ final class EmitterController: ObservableObject {
         guard let id = activeReceiverID, let link = links[id] else { return false }
         switch StreamMessage(event: event, type: type) {
         case let .mouseMove(dx, dy):
-            link.movePointer(dx: Double(dx), dy: Double(dy))
+            link.movePointer(dx: Double(dx), dy: Double(dy), time: EventClock.uptimeNanoseconds(of: event))
         case let message? where message.dependsOnPointer:
             link.syncPointer()
             link.send(message)

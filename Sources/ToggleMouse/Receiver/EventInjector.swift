@@ -3,7 +3,15 @@ import Foundation
 
 /// Replays streamed input as local events. Requires Accessibility permission.
 /// Tracks what is held so everything can be released when a stream ends or drops.
+///
+/// All work runs on a dedicated high-priority queue, so a busy main thread doesn't
+/// delay input. Calls are queued in order.
 final class EventInjector {
+    private static let smoothingInterval: DispatchTimeInterval = .milliseconds(2)
+
+    private let queue = DispatchQueue(label: "app.togglemouse.injector", qos: .userInteractive)
+    private var smoother = PointerSmoother()
+    private var smoothingTimer: DispatchSourceTimer?
     private let source = CGEventSource(stateID: .hidSystemState)
     private var pressedButtons: Set<UInt8> = []
     private var pressedKeys: Set<UInt16> = []
@@ -20,7 +28,65 @@ final class EventInjector {
         (.maskCommand, 0x37), (.maskShift, 0x38), (.maskAlternate, 0x3A), (.maskControl, 0x3B), (.maskSecondaryFn, 0x3F),
     ]
 
+    init() {
+        let timer = DispatchSource.makeTimerSource(flags: .strict, queue: queue)
+        timer.schedule(deadline: .now(), repeating: Self.smoothingInterval, leeway: .nanoseconds(0))
+        timer.setEventHandler { [weak self] in self?.smoothingTick() }
+        smoothingTimer = timer
+    }
+
+    deinit {
+        // A suspended dispatch source must be resumed before it can be released.
+        if smoother.isIdle { smoothingTimer?.resume() }
+        smoothingTimer?.cancel()
+    }
+
     func apply(_ message: StreamMessage) {
+        queue.async { self.perform(message) }
+    }
+
+    func releaseAll() {
+        queue.async { self.releaseAllNow() }
+    }
+
+    /// Starts smoothing a new stream whose pointer total is currently (x, y).
+    func beginPointer(x: Double, y: Double) {
+        queue.async { self.stopSmoothing(resetTo: (x, y)) }
+    }
+
+    /// Queues a pointer total for smoothed playback. Times are uptime nanoseconds.
+    func pointer(x: Double, y: Double, sentAt: Int64, arrivedAt: Int64, viaDatagram: Bool) {
+        queue.async {
+            let wasIdle = self.smoother.isIdle
+            self.smoother.add(x: x, y: y, sentAt: sentAt, arrivedAt: arrivedAt, viaDatagram: viaDatagram)
+            if wasIdle { self.smoothingTimer?.resume() }
+        }
+    }
+
+    private func smoothingTick() {
+        let previous = (x: smoother.postedX, y: smoother.postedY)
+        if let target = smoother.target(at: Int64(DispatchTime.now().uptimeNanoseconds)) {
+            movePointer(dx: target.x - previous.x, dy: target.y - previous.y)
+        }
+        if smoother.isIdle { smoothingTimer?.suspend() }
+    }
+
+    /// Applies any buffered movement at once, so the next click lands where the cursor should be.
+    private func flushPointer() {
+        guard !smoother.isIdle else { return }
+        let previous = (x: smoother.postedX, y: smoother.postedY)
+        let target = smoother.flush()
+        smoothingTimer?.suspend()
+        movePointer(dx: target.x - previous.x, dy: target.y - previous.y)
+    }
+
+    private func stopSmoothing(resetTo position: (x: Double, y: Double)) {
+        if !smoother.isIdle { smoothingTimer?.suspend() }
+        smoother.reset(x: position.x, y: position.y)
+    }
+
+    private func perform(_ message: StreamMessage) {
+        if message.dependsOnPointer { flushPointer() }
         switch message {
         case let .mouseMove(dx, dy):
             moveMouse(dx: CGFloat(dx), dy: CGFloat(dy))
@@ -37,7 +103,8 @@ final class EventInjector {
         }
     }
 
-    func releaseAll() {
+    private func releaseAllNow() {
+        stopSmoothing(resetTo: (smoother.postedX, smoother.postedY))
         for keyCode in pressedKeys {
             pressKey(keyCode: keyCode, down: false, isRepeat: false, flags: flags)
         }
@@ -64,7 +131,12 @@ final class EventInjector {
         return current
     }
 
-    func moveMouse(dx: CGFloat, dy: CGFloat) {
+    private func movePointer(dx: Double, dy: Double) {
+        guard dx != 0 || dy != 0 else { return }
+        moveMouse(dx: CGFloat(dx), dy: CGFloat(dy))
+    }
+
+    private func moveMouse(dx: CGFloat, dy: CGFloat) {
         let current = cursorLocation
         let target = clampToDisplays(CGPoint(x: current.x + dx, y: current.y + dy), from: current)
         location = target

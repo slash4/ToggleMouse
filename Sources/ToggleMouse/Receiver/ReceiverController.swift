@@ -180,7 +180,7 @@ final class ReceiverController: ObservableObject {
               let session = sessions.first(where: { $0.isAuthenticated && $0.channel?.datagramID == id }),
               let message = try? session.channel?.openDatagram(datagram),
               case .pointer = message else { return }
-        handle(message, from: session)
+        handle(message, from: session, viaDatagram: true)
     }
 
     private func accept(_ nwConnection: NWConnection) {
@@ -239,7 +239,8 @@ final class ReceiverController: ObservableObject {
         }
     }
 
-    private func handle(_ message: StreamMessage, from session: InboundSession) {
+    private func handle(_ message: StreamMessage, from session: InboundSession, viaDatagram: Bool = false) {
+        let arrivedAt = Int64(DispatchTime.now().uptimeNanoseconds)
         guard session.isAuthenticated else {
             guard message == .ready else {
                 session.connection.close()
@@ -259,17 +260,18 @@ final class ReceiverController: ObservableObject {
             endStream()
             streamingSession = session
             streamingEmitterID = session.peer?.id
+            injector.beginPointer(x: session.pointerX, y: session.pointerY)
         case .end:
             if streamingSession === session { endStream() }
-        case let .pointer(sequence, x, y):
+        case let .pointer(sequence, x, y, time):
             // Datagrams and stream syncs interleave; only newer totals count.
             guard sequence > session.pointerSequence else { break }
-            let dx = x - session.pointerX
-            let dy = y - session.pointerY
             session.pointerSequence = sequence
             session.pointerX = x
             session.pointerY = y
-            if streamingSession === session { injector.moveMouse(dx: dx, dy: dy) }
+            if streamingSession === session {
+                injector.pointer(x: x, y: y, sentAt: Int64(clamping: time), arrivedAt: arrivedAt, viaDatagram: viaDatagram)
+            }
         default:
             if streamingSession === session { injector.apply(message) }
         }

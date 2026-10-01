@@ -8,7 +8,7 @@ final class WireTests: XCTestCase {
         let messages: [StreamMessage] = [
             .ready, .heartbeat, .begin, .end,
             .mouseMove(dx: -3.5, dy: 12),
-            .pointer(sequence: 42, x: -1234.5, y: 0.25),
+            .pointer(sequence: 42, x: -1234.5, y: 0.25, time: 123_456_789_012),
             .mouseButton(button: 2, down: true, clickState: 2),
             .scroll(continuous: true, lineX: -1, lineY: 3, pixelX: -4.25, pixelY: 30),
             .key(keyCode: 0x7E, down: false, isRepeat: true, flags: CGEventFlags.maskCommand.rawValue),
@@ -89,19 +89,19 @@ final class CryptoTests: XCTestCase {
         let (emitter, receiver) = try makeChannels()
         XCTAssertEqual(emitter.datagramID, receiver.datagramID)
 
-        let first = try emitter.sealDatagram(.pointer(sequence: 1, x: 1, y: 2), sequence: 1)
-        let third = try emitter.sealDatagram(.pointer(sequence: 3, x: 5, y: 6), sequence: 3)
+        let first = try emitter.sealDatagram(.pointer(sequence: 1, x: 1, y: 2, time: 1), sequence: 1)
+        let third = try emitter.sealDatagram(.pointer(sequence: 3, x: 5, y: 6, time: 3), sequence: 3)
         XCTAssertEqual(SecureChannel.datagramID(of: third), receiver.datagramID)
-        XCTAssertEqual(try receiver.openDatagram(third), .pointer(sequence: 3, x: 5, y: 6))
+        XCTAssertEqual(try receiver.openDatagram(third), .pointer(sequence: 3, x: 5, y: 6, time: 3))
         XCTAssertThrowsError(try receiver.openDatagram(first), "older datagram must be dropped")
         XCTAssertThrowsError(try receiver.openDatagram(third), "replayed datagram must be dropped")
 
-        var tampered = try emitter.sealDatagram(.pointer(sequence: 4, x: 0, y: 0), sequence: 4)
+        var tampered = try emitter.sealDatagram(.pointer(sequence: 4, x: 0, y: 0, time: 4), sequence: 4)
         tampered[tampered.count - 1] ^= 1
         XCTAssertThrowsError(try receiver.openDatagram(tampered))
 
         let (other, _) = try makeChannels()
-        XCTAssertThrowsError(try receiver.openDatagram(other.sealDatagram(.pointer(sequence: 9, x: 0, y: 0), sequence: 9)))
+        XCTAssertThrowsError(try receiver.openDatagram(other.sealDatagram(.pointer(sequence: 9, x: 0, y: 0, time: 9), sequence: 9)))
 
         // Stream traffic is unaffected by the datagram path.
         XCTAssertEqual(try receiver.open(emitter.seal(.begin)), .begin)

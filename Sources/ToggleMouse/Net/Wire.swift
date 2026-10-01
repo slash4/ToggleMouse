@@ -33,7 +33,8 @@ enum StreamMessage: Equatable {
     case mouseMove(dx: Float, dy: Float)
     /// Running total of pointer movement since the session started, numbered so the receiver
     /// can apply only newer totals. Sent by datagram, and over the stream before clicks.
-    case pointer(sequence: UInt64, x: Double, y: Double)
+    /// `time` is the emitter's uptime in nanoseconds when the movement was captured.
+    case pointer(sequence: UInt64, x: Double, y: Double, time: UInt64)
     case mouseButton(button: UInt8, down: Bool, clickState: UInt8)
     case scroll(continuous: Bool, lineX: Int32, lineY: Int32, pixelX: Float, pixelY: Float)
     case key(keyCode: UInt16, down: Bool, isRepeat: Bool, flags: UInt64)
@@ -54,8 +55,8 @@ extension StreamMessage {
             w.u8(0x04)
         case let .mouseMove(dx, dy):
             w.u8(0x10); w.f32(dx); w.f32(dy)
-        case let .pointer(sequence, x, y):
-            w.u8(0x13); w.u64(sequence); w.f64(x); w.f64(y)
+        case let .pointer(sequence, x, y, time):
+            w.u8(0x13); w.u64(sequence); w.f64(x); w.f64(y); w.u64(time)
         case let .mouseButton(button, down, clickState):
             w.u8(0x11); w.u8(button); w.bool(down); w.u8(clickState)
         case let .scroll(continuous, lineX, lineY, pixelX, pixelY):
@@ -84,8 +85,8 @@ extension StreamMessage {
             guard let dx = r.f32(), let dy = r.f32() else { return nil }
             self = .mouseMove(dx: dx, dy: dy)
         case 0x13:
-            guard let sequence = r.u64(), let x = r.f64(), let y = r.f64() else { return nil }
-            self = .pointer(sequence: sequence, x: x, y: y)
+            guard let sequence = r.u64(), let x = r.f64(), let y = r.f64(), let time = r.u64() else { return nil }
+            self = .pointer(sequence: sequence, x: x, y: y, time: time)
         case 0x11:
             guard let button = r.u8(), let down = r.bool(), let clickState = r.u8() else { return nil }
             self = .mouseButton(button: button, down: down, clickState: clickState)
