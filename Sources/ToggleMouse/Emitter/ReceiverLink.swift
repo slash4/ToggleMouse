@@ -18,6 +18,8 @@ final class ReceiverLink {
     var peer: PairedPeer
     var onStateChange: ((State) -> Void)?
     var onError: ((String) -> Void)?
+    /// Heartbeat round-trip time, reported after each echo.
+    var onRoundTrip: ((TimeInterval) -> Void)?
 
     private(set) var state: State = .disconnected {
         didSet { if state != oldValue { onStateChange?(state) } }
@@ -29,7 +31,9 @@ final class ReceiverLink {
     private var ephemeral: Curve25519.KeyAgreement.PrivateKey?
     private var connectStarted = Date.distantPast
     private var lastReceived = Date.distantPast
-    private var lastSent = Date.distantPast
+    /// Heartbeats go out on a fixed schedule, even while input traffic is flowing,
+    /// because the receiver only sends anything back when it echoes one.
+    private var lastHeartbeat = Date.distantPast
     private var nextAttempt = Date.distantPast
 
     init(peer: PairedPeer, identity: Identity) {
@@ -47,8 +51,9 @@ final class ReceiverLink {
         case .connected:
             if now.timeIntervalSince(lastReceived) > Self.silenceTimeout {
                 close()
-            } else if now.timeIntervalSince(lastSent) >= Self.heartbeatInterval {
+            } else if now.timeIntervalSince(lastHeartbeat) >= Self.heartbeatInterval {
                 send(.heartbeat)
+                lastHeartbeat = now
             }
         }
     }
@@ -61,7 +66,6 @@ final class ReceiverLink {
     func send(_ message: StreamMessage) {
         guard let channel, let connection, let frame = try? channel.seal(message) else { return }
         connection.send(frame)
-        lastSent = Date()
     }
 
     func close() {
@@ -97,8 +101,13 @@ final class ReceiverLink {
                 return
             }
             lastReceived = Date()
-            if message == .ready, state == .connecting {
+            switch message {
+            case .ready where state == .connecting:
                 state = .connected
+            case .heartbeat:
+                onRoundTrip?(lastReceived.timeIntervalSince(lastHeartbeat))
+            default:
+                break
             }
             return
         }

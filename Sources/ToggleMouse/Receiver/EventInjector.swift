@@ -8,6 +8,12 @@ final class EventInjector {
     private var pressedButtons: Set<UInt8> = []
     private var pressedKeys: Set<UInt16> = []
     private var flags: CGEventFlags = []
+    /// Where we last put the cursor. The system position lags behind posted events,
+    /// so reading it back on every move drops deltas and makes the cursor stutter.
+    private var location: CGPoint?
+    private var lastMove = Date.distantPast
+    private var displays: [CGRect] = []
+    private var displaysRefreshed = Date.distantPast
 
     /// Modifier flag → left-hand key code, used to release stuck modifiers.
     private static let modifierKeys: [(CGEventFlags, UInt16)] = [
@@ -44,17 +50,25 @@ final class EventInjector {
         pressedKeys = []
         pressedButtons = []
         flags = []
+        location = nil
     }
 
     // MARK: Mouse
 
+    /// Our tracked position while moves keep coming; after a pause, re-read the system
+    /// position in case the receiver's own mouse moved the cursor.
     private var cursorLocation: CGPoint {
-        CGEvent(source: nil)?.location ?? .zero
+        if let location, Date().timeIntervalSince(lastMove) < 0.5 { return location }
+        let current = CGEvent(source: nil)?.location ?? .zero
+        location = current
+        return current
     }
 
     private func moveMouse(dx: CGFloat, dy: CGFloat) {
         let current = cursorLocation
-        let target = Self.clampToDisplays(CGPoint(x: current.x + dx, y: current.y + dy), from: current)
+        let target = clampToDisplays(CGPoint(x: current.x + dx, y: current.y + dy), from: current)
+        location = target
+        lastMove = Date()
         let (type, button): (CGEventType, CGMouseButton) =
             if pressedButtons.contains(0) { (.leftMouseDragged, .left) }
             else if pressedButtons.contains(1) { (.rightMouseDragged, .right) }
@@ -99,8 +113,11 @@ final class EventInjector {
 
     /// Keeps the cursor on screen: if the target falls between displays, clamp it to
     /// the display the cursor is currently on.
-    private static func clampToDisplays(_ point: CGPoint, from current: CGPoint) -> CGPoint {
-        let displays = activeDisplayBounds()
+    private func clampToDisplays(_ point: CGPoint, from current: CGPoint) -> CGPoint {
+        if Date().timeIntervalSince(displaysRefreshed) > 2 {
+            displays = Self.activeDisplayBounds()
+            displaysRefreshed = Date()
+        }
         if displays.contains(where: { $0.contains(point) }) { return point }
         guard let display = displays.first(where: { $0.contains(current) }) ?? displays.first else { return point }
         return CGPoint(

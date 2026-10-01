@@ -15,6 +15,7 @@ struct DiscoveredReceiver: Identifiable, Equatable {
 final class EmitterController: ObservableObject {
     @Published private(set) var discovered: [DiscoveredReceiver] = []
     @Published private(set) var linkStates: [String: ReceiverLink.State] = [:]
+    @Published private(set) var roundTrips: [String: TimeInterval] = [:]
     @Published private(set) var activeReceiverID: String?
     @Published private(set) var pairing: PairingSession?
     @Published private(set) var isCapturing = false
@@ -121,6 +122,7 @@ final class EmitterController: ObservableObject {
             link.close()
             links[id] = nil
             linkStates[id] = nil
+            roundTrips[id] = nil
         }
         for peer in peers.values {
             if let link = links[peer.id] {
@@ -136,12 +138,14 @@ final class EmitterController: ObservableObject {
             link.onStateChange = { [weak self] state in
                 guard let self else { return }
                 self.linkStates[peer.id] = state
+                if state != .connected { self.roundTrips[peer.id] = nil }
                 if state != .connected, self.activeReceiverID == peer.id {
                     // Connection lost mid-stream: hand control back to this Mac.
                     self.stopStreaming()
                 }
             }
             link.onError = { [weak self] message in self?.lastError = message }
+            link.onRoundTrip = { [weak self] rtt in self?.roundTrips[peer.id] = rtt }
             links[peer.id] = link
             linkStates[peer.id] = .disconnected
         }

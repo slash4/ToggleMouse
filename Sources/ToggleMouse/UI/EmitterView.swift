@@ -22,6 +22,7 @@ struct EmitterView: View {
                         ReceiverRow(
                             peer: $peer,
                             state: controller.linkStates[peer.id] ?? .disconnected,
+                            roundTrip: controller.roundTrips[peer.id],
                             isStreaming: controller.activeReceiverID == peer.id,
                             onRecordingChange: { controller.isRecordingHotkey = $0 },
                             onUnpair: { store.receivers.removeAll { $0.id == peer.id } }
@@ -76,6 +77,7 @@ struct EmitterView: View {
 private struct ReceiverRow: View {
     @Binding var peer: PairedPeer
     let state: ReceiverLink.State
+    let roundTrip: TimeInterval?
     let isStreaming: Bool
     let onRecordingChange: (Bool) -> Void
     let onUnpair: () -> Void
@@ -88,6 +90,12 @@ private struct ReceiverRow: View {
                 Text(peer.name).bold()
                 Text(isStreaming ? "Streaming" : state == .connected ? "Connected" : state == .connecting ? "Connecting…" : "Offline")
                     .foregroundStyle(.secondary)
+                if let roundTrip, state == .connected {
+                    Text("\(Int((roundTrip * 1000).rounded())) ms")
+                        .monospacedDigit()
+                        .foregroundStyle(roundTrip > 0.03 ? .orange : .secondary)
+                        .help("Network round trip, measured every 2 seconds")
+                }
                 Spacer()
                 HotkeyField(hotkey: $peer.hotkey, onRecordingChange: onRecordingChange)
                 Button("Unpair", role: .destructive, action: onUnpair)
