@@ -6,6 +6,8 @@
 	<string>en</string>
 	<key>CFBundleExecutable</key>
 	<string>ToggleMouse</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
 	<key>CFBundleIdentifier</key>
 	<string>app.togglemouse.ToggleMouse</string>
 	<key>CFBundleInfoDictionaryVersion</key>
@@ -22,11 +24,11 @@
 	<string>14.0</string>
 	<key>LSUIElement</key>
 	<true/>
-	<key>NSLocalNetworkUsageDescription</key>
-	<string>ToggleMouse finds and connects to your other Macs on the local network to share the mouse and keyboard.</string>
 	<key>NSBonjourServices</key>
 	<array>
 		<string>_togglemouse._tcp</string>
 	</array>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>ToggleMouse finds and connects to your other Macs on the local network to share the mouse and keyboard.</string>
 </dict>
 </plist>

@@ -1,18 +1,20 @@
 #!/bin/bash
-# Builds build/ToggleMouse.app and signs it.
+# Builds a universal (arm64 + x86_64) build/ToggleMouse.app and signs it.
 # Signing identity: $SIGN_IDENTITY if set, else the first Developer ID Application,
 # else the first Apple Development identity, else ad-hoc. A stable identity keeps the
 # Accessibility permission and Keychain access across rebuilds.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-swift build -c release
+BUILD_ARGS=(-c release --arch arm64 --arch x86_64)
+swift build "${BUILD_ARGS[@]}"
 
 APP=build/ToggleMouse.app
 rm -rf "$APP"
-mkdir -p "$APP/Contents/MacOS"
-cp "$(swift build -c release --show-bin-path)/ToggleMouse" "$APP/Contents/MacOS/"
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+cp "$(swift build "${BUILD_ARGS[@]}" --show-bin-path)/ToggleMouse" "$APP/Contents/MacOS/"
 cp Resources/Info.plist "$APP/Contents/"
+cp Resources/AppIcon.icns "$APP/Contents/Resources/"
 
 find_identity() {
     security find-identity -v -p codesigning | grep -m1 "$1" | sed -E 's/.*"(.*)"/\1/' || true
