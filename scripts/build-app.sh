@@ -30,4 +30,10 @@ else
     codesign --force --sign - "$APP"
 fi
 
-echo "Built $APP"
+# Zip for transfer: copying a bare .app onto a network share or some other volumes adds
+# metadata to the bundle, which breaks the signature. ditto keeps it intact.
+ZIP=build/ToggleMouse.zip
+rm -f "$ZIP"
+ditto -c -k --keepParent "$APP" "$ZIP"
+
+echo "Built $APP and $ZIP"
