@@ -1,7 +1,12 @@
 # ToggleMouse
 
-Share one Mac's mouse and keyboard with other Macs on the same network. The same app runs
-in two modes:
+[![CI](https://github.com/slash4/ToggleMouse/actions/workflows/ci.yml/badge.svg)](https://github.com/slash4/ToggleMouse/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
+Share one Mac's mouse and keyboard with other Macs on the same network. It's a free, open
+alternative to Universal Control that doesn't need a shared Apple ID. You switch with a
+keyboard shortcut or by pushing the cursor through a screen edge. The same app runs in
+two modes:
 
 - **Emitter**: the Mac the mouse and keyboard are plugged into. A per-receiver shortcut
   toggles streaming to that receiver.
@@ -9,25 +14,62 @@ in two modes:
 
 The menu bar icon is grey when idle, red while emitting and green while receiving.
 
+> **Status:** early and experimental. There are no prebuilt downloads; build it from source.
+> The encryption hasn't been audited; see [SECURITY.md](SECURITY.md).
+
+## Requirements
+
+- macOS 14 or later, on Intel or Apple Silicon (builds are universal).
+- Xcode 16 or later to build.
+- Both Macs on the same local network. Wi-Fi works; Ethernet is smoother.
+
 ## Build
 
 ```sh
-./scripts/build-app.sh          # builds and signs build/ToggleMouse.app
-swift test                      # protocol and crypto tests
+git clone https://github.com/slash4/ToggleMouse.git
+cd ToggleMouse
+swift test                      # protocol, crypto and smoothing tests
+./scripts/build-app.sh          # builds build/ToggleMouse.app and build/ToggleMouse.zip
 ```
 
-Signing uses `$SIGN_IDENTITY` if set, otherwise the first Developer ID Application identity,
-otherwise the first Apple Development identity. Use a stable identity: macOS ties the
-Accessibility permission and the Keychain item to the signature, so ad-hoc builds ask again
-after every rebuild.
+### Signing
+
+The build script signs with `$SIGN_IDENTITY` if set. Otherwise it uses the first Developer ID
+Application identity in your keychain, then the first Apple Development identity, and falls
+back to ad-hoc signing.
 
 ```sh
 SIGN_IDENTITY="Apple Development: Your Name (TEAMID)" ./scripts/build-app.sh
 ```
 
+A free Apple Account in Xcode is enough to get an Apple Development certificate. Signing with
+a real certificate matters for two reasons:
+
+- macOS ties the Accessibility permission and the Keychain item to the signature, so an ad-hoc
+  build asks for permission again after every rebuild.
+- The AirDrop helper checks that the app and helper share a team ID, so it doesn't work in
+  ad-hoc builds. Everything else does.
+
+### Installing on another Mac
+
+Copy `build/ToggleMouse.zip` to the other Mac, rather than the bare `.app`: some network
+shares add metadata that breaks the signature. Unzip it into `/Applications`. A build signed
+with a development certificate isn't notarized, so the first time macOS blocks it. Open it
+once, then click **Open Anyway** in System Settings › Privacy & Security.
+
+Both Macs must run builds of the same commit. The protocol isn't versioned yet, and
+mismatched builds fail to connect.
+
+## Permissions
+
+- **Accessibility**: the emitter needs it to capture the mouse and keyboard, and the receiver
+  needs it to replay them.
+- **Local Network**: to find and connect to the other Mac.
+- **Login Items** (optional): approves the AirDrop helper. See below.
+
 ## Setup
 
-1. Copy `ToggleMouse.app` to both Macs and open it.
+1. Install `ToggleMouse.app` on both Macs and open it.
 2. Grant **Accessibility** (System Settings › Privacy & Security) on both Macs, and allow
    **Local Network** access when asked.
 3. On the receiver, choose **Receiver** and click **Allow Pairing for 2 Minutes**.
@@ -82,9 +124,20 @@ SIGN_IDENTITY="Apple Development: Your Name (TEAMID)" ./scripts/build-app.sh
   the emitter takes control back. When a stream ends or drops, the receiver releases every key,
   button and modifier that is still held.
 
-## Limitations (v1)
+## Limitations
 
 - Movement, buttons, scroll and keys only. No gestures, media keys, clipboard or login window.
 - While Secure Input is on (for example, a focused password field on the emitter), macOS hides
   keystrokes from the event tap.
 - The emitter's cursor stays visible, frozen in place, while streaming.
+- No protocol version check: mismatched builds don't connect, and don't say why.
+- No launch at login yet.
+
+## Contributing
+
+Issues and pull requests are welcome. Run `swift test` before sending a change. When
+reporting a bug, include both Macs' models and macOS versions, and the network type.
+
+## License
+
+[MIT](LICENSE)

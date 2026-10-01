@@ -11,10 +11,10 @@ public protocol AWDLHelperProtocol {
 }
 
 public enum HelperConstants {
-    public static let machServiceName = "app.togglemouse.helper"
-    public static let plistName = "app.togglemouse.helper.plist"
-    public static let appIdentifier = "app.togglemouse.ToggleMouse"
-    public static let helperIdentifier = "app.togglemouse.helper"
+    public static let machServiceName = "io.github.slash4.togglemouse.helper"
+    public static let plistName = "io.github.slash4.togglemouse.helper.plist"
+    public static let appIdentifier = "io.github.slash4.togglemouse"
+    public static let helperIdentifier = "io.github.slash4.togglemouse.helper"
 }
 
 public enum CodeSigning {

@@ -22,7 +22,7 @@ final class Identity {
         var privateKey: Data
     }
 
-    private static let service = "app.togglemouse.identity"
+    private static let service = "io.github.slash4.togglemouse.identity"
     private static let account = "identity"
 
     static func loadOrCreate() throws -> Identity {

@@ -13,7 +13,7 @@ final class EventInjector {
     /// with the position along that edge.
     var onEdgeExit: ((Double) -> Void)?
 
-    private let queue = DispatchQueue(label: "app.togglemouse.injector", qos: .userInteractive)
+    private let queue = DispatchQueue(label: "io.github.slash4.togglemouse.injector", qos: .userInteractive)
     private var smoother = PointerSmoother()
     private var smoothingTimer: DispatchSourceTimer?
     private let source = CGEventSource(stateID: .hidSystemState)
