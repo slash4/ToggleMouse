@@ -31,6 +31,8 @@ final class EmitterController: ObservableObject {
     private var links: [String: ReceiverLink] = [:]
     private var timer: Timer?
     private var storeObserver: AnyCancellable?
+    /// Where the local cursor is held while streaming.
+    private var frozenLocation: CGPoint?
     /// Key-ups to swallow because their key-down triggered a shortcut.
     private var swallowedKeyUps: Set<UInt16> = []
 
@@ -81,6 +83,7 @@ final class EmitterController: ObservableObject {
         activeReceiverID = receiverID
         link.send(.begin)
         // Freeze the local cursor; moves still arrive with their deltas.
+        frozenLocation = CGEvent(source: nil)?.location
         CGAssociateMouseAndMouseCursorPosition(0)
     }
 
@@ -89,7 +92,17 @@ final class EmitterController: ObservableObject {
         links[id]?.syncPointer()
         links[id]?.send(.end)
         activeReceiverID = nil
+        frozenLocation = nil
         CGAssociateMouseAndMouseCursorPosition(1)
+    }
+
+    /// macOS can quietly undo the cursor freeze, for example when focus moves to another app.
+    /// If the cursor has left its spot, put it back and freeze it again.
+    private func holdCursor(at location: CGPoint) {
+        guard let frozenLocation,
+              abs(location.x - frozenLocation.x) > 0.5 || abs(location.y - frozenLocation.y) > 0.5 else { return }
+        CGWarpMouseCursorPosition(frozenLocation)
+        CGAssociateMouseAndMouseCursorPosition(0)
     }
 
     private func handle(_ type: CGEventType, _ event: CGEvent) -> Bool {
@@ -111,6 +124,7 @@ final class EmitterController: ObservableObject {
         switch StreamMessage(event: event, type: type) {
         case let .mouseMove(dx, dy):
             link.movePointer(dx: Double(dx), dy: Double(dy), time: EventClock.uptimeNanoseconds(of: event))
+            holdCursor(at: event.location)
         case let message? where message.dependsOnPointer:
             link.syncPointer()
             link.send(message)
