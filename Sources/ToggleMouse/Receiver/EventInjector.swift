@@ -9,6 +9,10 @@ import Foundation
 final class EventInjector {
     private static let smoothingInterval: DispatchTimeInterval = .milliseconds(2)
 
+    /// Called on the main queue when the cursor is pushed out through the return edge,
+    /// with the position along that edge.
+    var onEdgeExit: ((Double) -> Void)?
+
     private let queue = DispatchQueue(label: "app.togglemouse.injector", qos: .userInteractive)
     private var smoother = PointerSmoother()
     private var smoothingTimer: DispatchSourceTimer?
@@ -20,8 +24,11 @@ final class EventInjector {
     /// so reading it back on every move drops deltas and makes the cursor stutter.
     private var location: CGPoint?
     private var lastMove = Date.distantPast
-    private var displays: [CGRect] = []
-    private var displaysRefreshed = Date.distantPast
+    private var cachedLayout = ScreenLayout(displays: [])
+    private var layoutRefreshed = Date.distantPast
+    /// Edge that hands control back to the emitter during the current stream.
+    private var returnEdge: ScreenEdge?
+    private var edgePush = EdgePush()
 
     /// Modifier flag → left-hand key code, used to release stuck modifiers.
     private static let modifierKeys: [(CGEventFlags, UInt16)] = [
@@ -51,7 +58,24 @@ final class EventInjector {
 
     /// Starts smoothing a new stream whose pointer total is currently (x, y).
     func beginPointer(x: Double, y: Double) {
-        queue.async { self.stopSmoothing(resetTo: (x, y)) }
+        queue.async {
+            self.stopSmoothing(resetTo: (x, y))
+            self.returnEdge = nil
+            self.edgePush.reset()
+        }
+    }
+
+    /// `side` is where this Mac sits relative to the emitter. The cursor leaves through the
+    /// opposite edge and, when `entry` is set, comes in there now.
+    func place(side: ScreenEdge?, entry: Double?) {
+        queue.async {
+            self.returnEdge = side?.opposite
+            self.edgePush.reset()
+            guard let side, let entry, let point = self.layout.entryPoint(on: side.opposite, fraction: entry) else { return }
+            CGWarpMouseCursorPosition(point)
+            self.location = point
+            self.lastMove = Date()
+        }
     }
 
     /// Queues a pointer total for smoothed playback. Times are uptime nanoseconds.
@@ -98,13 +122,14 @@ final class EventInjector {
             pressKey(keyCode: keyCode, down: down, isRepeat: isRepeat, flags: CGEventFlags(rawValue: flags))
         case let .flagsChanged(keyCode, flags):
             changeFlags(keyCode: keyCode, flags: CGEventFlags(rawValue: flags))
-        case .ready, .heartbeat, .begin, .end, .pointer:
+        case .ready, .heartbeat, .begin, .end, .pointer, .placement, .edgeExit:
             break
         }
     }
 
     private func releaseAllNow() {
         stopSmoothing(resetTo: (smoother.postedX, smoother.postedY))
+        returnEdge = nil
         for keyCode in pressedKeys {
             pressKey(keyCode: keyCode, down: false, isRepeat: false, flags: flags)
         }
@@ -138,9 +163,10 @@ final class EventInjector {
 
     private func moveMouse(dx: CGFloat, dy: CGFloat) {
         let current = cursorLocation
-        let target = clampToDisplays(CGPoint(x: current.x + dx, y: current.y + dy), from: current)
+        let target = layout.clamp(CGPoint(x: current.x + dx, y: current.y + dy), from: current)
         location = target
         lastMove = Date()
+        checkReturnEdge(at: target, dx: Double(dx), dy: Double(dy))
         let (type, button): (CGEventType, CGMouseButton) =
             if pressedButtons.contains(0) { (.leftMouseDragged, .left) }
             else if pressedButtons.contains(1) { (.rightMouseDragged, .right) }
@@ -183,26 +209,25 @@ final class EventInjector {
         event.post(tap: .cghidEventTap)
     }
 
-    /// Keeps the cursor on screen: if the target falls between displays, clamp it to
-    /// the display the cursor is currently on.
-    private func clampToDisplays(_ point: CGPoint, from current: CGPoint) -> CGPoint {
-        if Date().timeIntervalSince(displaysRefreshed) > 2 {
-            displays = Self.activeDisplayBounds()
-            displaysRefreshed = Date()
+    /// Display arrangement, refreshed every 2 s rather than on every move.
+    private var layout: ScreenLayout {
+        if Date().timeIntervalSince(layoutRefreshed) > 2 {
+            cachedLayout = ScreenLayout.current()
+            layoutRefreshed = Date()
         }
-        if displays.contains(where: { $0.contains(point) }) { return point }
-        guard let display = displays.first(where: { $0.contains(current) }) ?? displays.first else { return point }
-        return CGPoint(
-            x: min(max(point.x, display.minX), display.maxX - 1),
-            y: min(max(point.y, display.minY), display.maxY - 1)
-        )
+        return cachedLayout
     }
 
-    private static func activeDisplayBounds() -> [CGRect] {
-        var ids = [CGDirectDisplayID](repeating: 0, count: 16)
-        var count: UInt32 = 0
-        guard CGGetActiveDisplayList(UInt32(ids.count), &ids, &count) == .success else { return [] }
-        return ids.prefix(Int(count)).map { CGDisplayBounds($0) }
+    /// Hands control back once the cursor is pushed far enough through the return edge.
+    /// Not during a drag, which would leave the button held on this Mac.
+    private func checkReturnEdge(at point: CGPoint, dx: Double, dy: Double) {
+        guard let returnEdge, pressedButtons.isEmpty else { return }
+        let atEdge = layout.isAtOuterEdge(point, returnEdge) ? returnEdge : nil
+        guard edgePush.push(against: atEdge, dx: dx, dy: dy, now: ProcessInfo.processInfo.systemUptime) else { return }
+        // Report once; the emitter ends the stream in reply.
+        self.returnEdge = nil
+        let position = layout.fraction(of: point, along: returnEdge)
+        DispatchQueue.main.async { self.onEdgeExit?(position) }
     }
 
     // MARK: Keyboard

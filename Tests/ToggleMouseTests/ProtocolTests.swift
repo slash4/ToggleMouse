@@ -7,6 +7,8 @@ final class WireTests: XCTestCase {
     func testStreamMessagesRoundTrip() {
         let messages: [StreamMessage] = [
             .ready, .heartbeat, .begin, .end,
+            .placement(side: .right, entry: 0.25), .placement(side: nil, entry: nil), .placement(side: .top, entry: nil),
+            .edgeExit(position: 0.75),
             .mouseMove(dx: -3.5, dy: 12),
             .pointer(sequence: 42, x: -1234.5, y: 0.25, time: 123_456_789_012),
             .mouseButton(button: 2, down: true, clickState: 2),

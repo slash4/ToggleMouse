@@ -9,6 +9,9 @@ struct PairedPeer: Codable, Identifiable, Equatable {
     var manualHost: String?
     /// Receivers only: shortcut that toggles streaming to this receiver.
     var hotkey: Hotkey?
+    /// Receivers only: pushing the cursor through this edge of the emitter's screens
+    /// switches to this receiver. nil turns edge switching off.
+    var edge: ScreenEdge?
 }
 
 /// Paired peers, saved as JSON in Application Support. Public keys aren't secret;

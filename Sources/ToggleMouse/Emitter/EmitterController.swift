@@ -33,6 +33,9 @@ final class EmitterController: ObservableObject {
     private var storeObserver: AnyCancellable?
     /// Where the local cursor is held while streaming.
     private var frozenLocation: CGPoint?
+    private var edgePush = EdgePush()
+    private var cachedLayout = ScreenLayout(displays: [])
+    private var layoutRefreshed = Date.distantPast
     /// Key-ups to swallow because their key-down triggered a shortcut.
     private var swallowedKeyUps: Set<UInt16> = []
 
@@ -67,7 +70,8 @@ final class EmitterController: ObservableObject {
 
     // MARK: Streaming
 
-    func toggle(_ receiverID: String) {
+    /// `entry` is where along the receiver's edge the cursor crossed over, when switching by edge.
+    func toggle(_ receiverID: String, entry: Double? = nil) {
         if activeReceiverID == receiverID {
             stopStreaming()
             return
@@ -82,6 +86,7 @@ final class EmitterController: ObservableObject {
         lastError = nil
         activeReceiverID = receiverID
         link.send(.begin)
+        link.send(.placement(side: link.peer.edge, entry: entry))
         // Freeze the local cursor; moves still arrive with their deltas.
         frozenLocation = CGEvent(source: nil)?.location
         CGAssociateMouseAndMouseCursorPosition(0)
@@ -93,7 +98,46 @@ final class EmitterController: ObservableObject {
         links[id]?.send(.end)
         activeReceiverID = nil
         frozenLocation = nil
+        edgePush.reset()
         CGAssociateMouseAndMouseCursorPosition(1)
+    }
+
+    /// The receiver's cursor left through its return edge: take control back and bring the
+    /// cursor in on this Mac's matching edge.
+    private func returnFromEdge(_ receiverID: String, position: Double) {
+        guard activeReceiverID == receiverID else { return }
+        let side = links[receiverID]?.peer.edge
+        stopStreaming()
+        if let side, let point = layout.entryPoint(on: side, fraction: position) {
+            CGWarpMouseCursorPosition(point)
+        }
+    }
+
+    /// Display arrangement, refreshed every 2 s rather than on every move.
+    private var layout: ScreenLayout {
+        if Date().timeIntervalSince(layoutRefreshed) > 2 {
+            cachedLayout = ScreenLayout.current()
+            layoutRefreshed = Date()
+        }
+        return cachedLayout
+    }
+
+    /// Switches to the receiver placed on the edge the cursor is pushed through.
+    private func checkEdge(_ event: CGEvent) {
+        let location = event.location
+        let layout = layout
+        let target = store.receivers.first { peer in
+            guard let edge = peer.edge, linkStates[peer.id] == .connected else { return false }
+            return layout.isAtOuterEdge(location, edge)
+        }
+        let pushed = edgePush.push(
+            against: target?.edge,
+            dx: event.getDoubleValueField(.mouseEventDeltaX),
+            dy: event.getDoubleValueField(.mouseEventDeltaY),
+            now: ProcessInfo.processInfo.systemUptime
+        )
+        guard pushed, let target, let edge = target.edge else { return }
+        toggle(target.id, entry: layout.fraction(of: location, along: edge))
     }
 
     /// macOS can quietly undo the cursor freeze, for example when focus moves to another app.
@@ -120,7 +164,10 @@ final class EmitterController: ObservableObject {
                 return true
             }
         }
-        guard let id = activeReceiverID, let link = links[id] else { return false }
+        guard let id = activeReceiverID, let link = links[id] else {
+            if type == .mouseMoved, !isRecordingHotkey { checkEdge(event) }
+            return false
+        }
         switch StreamMessage(event: event, type: type) {
         case let .mouseMove(dx, dy):
             link.movePointer(dx: Double(dx), dy: Double(dy), time: EventClock.uptimeNanoseconds(of: event))
@@ -169,6 +216,7 @@ final class EmitterController: ObservableObject {
             }
             link.onError = { [weak self] message in self?.lastError = message }
             link.onRoundTrip = { [weak self] rtt in self?.roundTrips[peer.id] = rtt }
+            link.onEdgeExit = { [weak self] position in self?.returnFromEdge(peer.id, position: position) }
             links[peer.id] = link
             linkStates[peer.id] = .disconnected
         }

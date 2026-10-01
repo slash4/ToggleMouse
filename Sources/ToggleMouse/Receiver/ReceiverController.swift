@@ -54,6 +54,10 @@ final class ReceiverController: ObservableObject {
     }
 
     func start() {
+        injector.onEdgeExit = { [weak self] position in
+            guard let self, let session = self.streamingSession else { return }
+            self.send(.edgeExit(position: position), to: session)
+        }
         startListener()
         startDatagramListener()
         timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in self?.tick() }
@@ -263,6 +267,8 @@ final class ReceiverController: ObservableObject {
             injector.beginPointer(x: session.pointerX, y: session.pointerY)
         case .end:
             if streamingSession === session { endStream() }
+        case let .placement(side, entry):
+            if streamingSession === session { injector.place(side: side, entry: entry) }
         case let .pointer(sequence, x, y, time):
             // Datagrams and stream syncs interleave; only newer totals count.
             guard sequence > session.pointerSequence else { break }

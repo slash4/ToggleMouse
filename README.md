@@ -35,6 +35,10 @@ SIGN_IDENTITY="Apple Development: Your Name (TEAMID)" ./scripts/build-app.sh
 5. Both Macs show a 6-digit code. If the codes match, click **Codes Match** on each Mac.
 6. Press the receiver's shortcut (default ⌃⌥⌘1, ⌃⌥⌘2, …) to stream to it. Press it again to
    take control back. Click the shortcut button in the window to change it.
+7. Optional: under each receiver, set **Screen edge** to the side of the emitter it sits on.
+   Push the cursor through that edge to switch to it, and through the opposite edge on the
+   receiver to come back. The cursor crosses at the matching height. Edges where another
+   display continues, and drags, never switch.
 
 ## How it works
 

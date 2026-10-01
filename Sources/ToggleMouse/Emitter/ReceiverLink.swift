@@ -22,6 +22,8 @@ final class ReceiverLink {
     var onError: ((String) -> Void)?
     /// Heartbeat round-trip time, reported after each echo.
     var onRoundTrip: ((TimeInterval) -> Void)?
+    /// The receiver's cursor was pushed out through its return edge at this position.
+    var onEdgeExit: ((Double) -> Void)?
 
     private(set) var state: State = .disconnected {
         didSet { if state != oldValue { onStateChange?(state) } }
@@ -144,6 +146,8 @@ final class ReceiverLink {
                 state = .connected
             case .heartbeat:
                 onRoundTrip?(lastReceived.timeIntervalSince(lastHeartbeat))
+            case let .edgeExit(position):
+                onEdgeExit?(position)
             default:
                 break
             }

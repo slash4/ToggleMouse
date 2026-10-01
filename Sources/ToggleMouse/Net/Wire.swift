@@ -29,6 +29,12 @@ enum StreamMessage: Equatable {
     case begin
     /// Emitter stopped streaming; receiver releases anything still held.
     case end
+    /// Sent after `begin`: which side of the emitter this receiver sits on (nil if none),
+    /// and where along that edge the cursor crossed over (nil when started by shortcut).
+    case placement(side: ScreenEdge?, entry: Double?)
+    /// Receiver to emitter: the cursor was pushed out through the return edge at this
+    /// fraction along it, so the emitter should take control back.
+    case edgeExit(position: Double)
     /// Raw movement from the event tap; the emitter turns it into `pointer` before sending.
     case mouseMove(dx: Float, dy: Float)
     /// Running total of pointer movement since the session started, numbered so the receiver
@@ -53,6 +59,11 @@ extension StreamMessage {
             w.u8(0x03)
         case .end:
             w.u8(0x04)
+        case let .placement(side, entry):
+            w.u8(0x05); w.u8(side?.rawValue ?? 0); w.bool(entry != nil)
+            if let entry { w.f64(entry) }
+        case let .edgeExit(position):
+            w.u8(0x06); w.f64(position)
         case let .mouseMove(dx, dy):
             w.u8(0x10); w.f32(dx); w.f32(dy)
         case let .pointer(sequence, x, y, time):
@@ -81,6 +92,19 @@ extension StreamMessage {
             self = .begin
         case 0x04:
             self = .end
+        case 0x05:
+            guard let rawSide = r.u8(), let hasEntry = r.bool() else { return nil }
+            let side = ScreenEdge(rawValue: rawSide)
+            guard side != nil || rawSide == 0 else { return nil }
+            var entry: Double?
+            if hasEntry {
+                guard let value = r.f64() else { return nil }
+                entry = value
+            }
+            self = .placement(side: side, entry: entry)
+        case 0x06:
+            guard let position = r.f64() else { return nil }
+            self = .edgeExit(position: position)
         case 0x10:
             guard let dx = r.f32(), let dy = r.f32() else { return nil }
             self = .mouseMove(dx: dx, dy: dy)

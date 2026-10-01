@@ -106,6 +106,13 @@ private struct ReceiverRow: View {
                     .onSubmit { peer.manualHost = host.trimmingCharacters(in: .whitespaces).isEmpty ? nil : host }
             }
             .font(.callout)
+            Picker("Screen edge", selection: $peer.edge) {
+                Text("Off").tag(ScreenEdge?.none)
+                ForEach(ScreenEdge.allCases) { Text($0.title).tag(ScreenEdge?.some($0)) }
+            }
+            .pickerStyle(.segmented)
+            .font(.callout)
+            .help("Push the cursor through this edge of this Mac's screens to switch to \(peer.name), and through the opposite edge there to come back.")
         }
         .onAppear { host = peer.manualHost ?? "" }
     }
